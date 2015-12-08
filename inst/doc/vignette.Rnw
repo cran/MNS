@@ -1,0 +1,740 @@
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{a4wide}
+
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows}
+\usepackage[utf8x]{inputenc}
+
+\usepackage{amsfonts,amsmath,amssymb,amsthm, cprotect}
+\usepackage{verbatim,float}
+\usepackage{graphicx,subfigure,url}
+\usepackage{natbib}
+\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
+\usepackage{lscape}
+
+% \VignetteIndexEntry{An R package for the MNS algorithm}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\title{Estimating and simulating multiple related functional connectivity networks via the {\tt MNS} Package }
+%\normalsize
+%\end{center}
+\author{Ricardo Pio Monti, Christoforos Anagnostopoulos and Giovanni Montana}
+\maketitle
+
+\begin{abstract}
+%It is often the case in neuroimaging studies that functional connectivity measurements are collected across a 
+In many neuroimaging studies functional connectivity measurements are collected across a 
+cohort of multiple subjects. 
+Given such data, a fundamental problem corresponds to accurately quantifying 
+variability across subjects.
+In this vignette we provide a brief illustration of the recently
+proposed Mixed Neighborhood Selection (MNS) algorithm which is able to 
+simultaneously estimate connectivity networks
+at the population and subject level
+as well as quantify inter-subject variability.
+The \verb+MNS+ package includes 
+parallel implementations the MNS algorithm as well
+as cross-validation functions;
+thereby providing computationally efficient methods through which to 
+select regularization parameters and 
+perform model estimation.
+
+% through which to efficiently select regularization parameters.
+% It is often the case that a two-step approach is taken whereby networks are first estimated
+% and the results are used to estimate variability. Such approaches have clear shortcomings.
+% In this vignette we provide a brielf illustration of the recently
+% proposed mixed neighbourhood selection (MNS) algorithm which is able to 
+% simultaneously estimate connectivity networks as well as inter-subject variability. 
+
+Moreover, this vignette also introduces an algorithm from which to simulate functional connectivity 
+networks for a cohort of related individuals. 
+It is well documented that functional connectivity displays reproducible activation patterns across subjects
+while simultaneously exhibiting high inter-subject variability. 
+To our surprise, we found there to be 
+limited algorithms through which to simulate
+connectivity networks for a cohort of subjects which display these widely accepted properties.
+To address this, we present a simple and efficient method through which to 
+simulate functional connectivity networks for multiple
+subjects.
+
+
+\end{abstract}
+
+\newpage
+\section{Introduction}
+
+A cornerstone in the understanding brain connectivity is the notion that connectivity can
+be represented as a graph or network composed of a set of nodes interconnected by a set of
+edges \citep{bullmore2009complex}. In the context of functional connectivity, edges
+represent statistical dependencies across spatially remote brain regions \citep{friston2011functional}.
+% A fundamental problem associated with the study of functional connectivity
+% involves understanding and quantifying variability 
+Understanding and quantifying variability in functional connectivity is a fundamental problem in modern neuroscience \citep{kelly2012characterizing, mueller2013individual}.
+Standard approaches within the neuroimaging literature tend to either ignore this
+variability by estimating a single network across all subjects
+or proceed too cautiously by estimating a network for each subject independently\footnote{More
+sophisticated methods (e.g., those proposed by \cite{varoquaux2010brain}) have also been suggested but we do not discuss 
+this further in this vignette. See \cite{MYREF} for a detailed discussion}.
+The former strategy makes implicit assumptions regarding the exchangeability of the data which 
+are difficult to justify in practice.
+Conversely, the latter approach
+does not exploit the shared network structure across subjects leading to detrimental 
+effects on the quality of the estimated networks.
+
+In order to partially address this issue, the mixed neighborhood selection (MNS) algorithm was recently
+proposed \citep{MYREF}. Briefly, the MNS algorithm looks to decompose the network structure 
+into two classes: reproducible edges which are present across the majority of the cohort 
+and edges which 
+represent subject-specific idiosyncrasies. It follows that the latter captures the 
+inter-subject variation. 
+
+In order to empirically validate the proposed MNS algorithm we require a 
+method through which to produce 
+synthetic data where the true underlying covariance structure is known. 
+Moreover, it would be desirable for such data to showcase the many hallmarks of functional imaging data. 
+To our surprise, we found that while there is a wide array of algorithms for simulating connectivity on a subject-specific
+level, limited attention has been given to generating simulated data for a cohort of related subjects. 
+As a result, in this vignette we present and implement a novel algorithm through which to simulate
+realistic functional connectivity networks for a cohort of subjects. 
+
+% The objective of this vignette is two-fold. First we  
+% introduce the MNS algorithm and present the corresponding implementation in \verb+R+.
+% This is presented in Section \ref{sec--MNS}.
+% However, the main objective of this vignette is also to 
+% introduce 
+% a novel algorithm through which to simulate functional connectivity 
+% across a cohort of subjects. The proposed algorithm was designed to
+% display several of the well-document properties of 
+% functional connectivity networks as well as properties reported during an 
+% exploratory data analysis of the ABIDE dataset \citep{di2014autism}. 
+% This is presented in Section \ref{sec--Algo}.
+
+The objective of this vignette is two-fold. 
+First, we introduce the aforementioned  
+ algorithm through which to simulate functional connectivity 
+across a cohort of subjects. The proposed algorithm was designed to
+display several of the well-document properties of 
+functional connectivity networks as well as properties reported during an 
+exploratory data analysis of the ABIDE data set \citep{di2014autism}. 
+This is presented in Section \ref{sec--Algo}.
+Second, we introduce the MNS algorithm 
+together with the corresponding \verb+MNS+ package.
+We highlight the strengths of the MNS algorithm through the use of examples with 
+simulated data. 
+
+
+
+
+\section{Simulating functional connectivity networks for a cohort of subjects}
+\label{sec--Algo}
+
+% The focus of the \verb+MNS+ package is to learn 
+% functional connectivity networks across a cohort of subjects. As we highlight throughout this 
+% vignette, the MNS algorithm is able to achieve this goal by 
+% leveraging information in a discriminate manner across subjects. 
+% In order to empirically validate the proposed method we require an algorithm through 
+% which to generate simulated data where the true covariance structure is known. 
+
+There is a wealth of literature and algorithms for simulating a 
+functional connectivity network for a single subject.
+However, there are limited methods through which to simulate 
+connectivity networks across a cohort of 
+subjects. While it would be possible to assume the networks are identical across all subjects,
+this corresponds to a tenuous assumption which can rarely be validated in practice. 
+
+In this section we present a novel algorithm through which to simulate 
+functional connectivity networks across a cohort of subjects.
+The resulting networks are shown to display some of the  well-documented properties of 
+connectivity. These properties include significant inter-subject variability \citep{mueller2013individual} together 
+with a subset of highly reproducible edges.
+% Properties of simulated networks are also compared to 
+% empirical results obtained from an exploratory analysis of ABIDE data.
+
+The remainder of this section is organized as follows: we briefly review some
+of the properties of functional connectivity networks in Section \ref{subsec--Prop}.
+The proposed algorithm is then introduced in Section \ref{subsec--Algo}
+together with an alternative method in Section \ref{subsec--alt}.
+We conclude by presenting some examples in Section \ref{subsec--Exam}.
+
+\subsection{Properties of functional connectivity networks}
+\label{subsec--Prop}
+
+There are several well-documented properties of functional connectivity networks, chief among which 
+is their modular structure and the presence of hub nodes \citep{bullmore2009complex}. 
+In addition to this, 
+high inter-subject variability is often reported across subjects. A hallmark of this 
+variability is that it does not occur 
+uniformly but instead tends to display certain characteristics: for example the 
+pre-frontal region is often reported to 
+display high inter-subject variability \citep{finn2015functional} and
+the distance between regions is also hypothesized to play a role \citep{van2012influence}.
+
+
+It is often the case that the 
+these characteristics are quantified and measured via the use 
+of graph theoretic techniques \citep{rubinov2010complex}. For example,
+the clustering coefficient is often employed as a measure of 
+functional segregation or modularity
+while the degree distribution is often employed to see if 
+the network follows a power-law distribution. 
+
+In the remainder of this 
+section we present a new algorithm through which to simulate 
+multiple related 
+functional connectivity networks and subsequently employ
+graph theoretic measures to 
+demonstrate that the proposed algorithm is able to recreate
+many of the properties typically observed in neuroimaging data. 
+In particular we focus on recreating the 
+following properties:
+\begin{enumerate}
+\item Networks should display a scale-free organization \citep{bullmore2009complex}.
+This implies that node degrees should follow a power-law distribution resulting in the presence of highly connected 
+hub nodes. 
+\item Significant inter-subject variability should be present. Following from reports in 
+the literature, we assume there is a subset of edges which demonstrate
+the highest variability (e.g., 
+these could correspond to edges in the pre-frontal region or between spatially remote regions as discussed
+previously).
+\item Finally, based on an exploratory data analysis of the ABIDE data (documented in 
+\cite{MYREF}) we found that the 
+clustering coefficient, a measure of network cohesiveness \citep{barrat2004architecture}, was 
+significantly higher within a population network as opposed to subject-specific networks
+% \footnote{see \cite{MYREF}
+% for further details}. 
+We therefore look to recreate this property as well. 
+\end{enumerate}
+
+
+
+\subsection{Proposed algorithm}
+\label{subsec--Algo}
+
+% Producing synthetic data where the true underlying covariance structure is known
+% is fundamental to providing an empirical validation of any algorithm.
+% As a result, in this
+% section we propose a simple algorithm through which to simulate synthetic networks
+% which display the aforementioned properties.
+
+The proposed algorithm proceeds as follows:
+first a population network is simulated according 
+to the preferential attachment model of \cite{barabasi1999emergence}.
+This corresponds to the set of reproducible edges which are shared throughout the entire cohort of subjects,
+denoted by $E^{pop}$. In order to obtain the corresponding 
+precision matrix, $\Theta^{pop}$,
+we follow \cite{danaher2014joint} and uniformly sample the edge strengths. 
+
+In order to introduce inter-subject variability 
+a set of variable edges, $\tilde E$, is randomly selected according to the
+\cite{erdHos1959random} model.
+The cardinality of $\tilde E$ is specified,  such that only
+$e_{ran} = |\tilde E|$ random edges are selected.
+The choice of $e_{ran}$ directly affects 
+the extent of inter-subject variability in the simulated cohort.
+We write $E^{(i)}$ to denote the subject-specific idiosyncrasies associated with the 
+$i$th subject. Thus, for each subject edges in $\tilde E$ are added to the edge structure, $E^{(i)}$,
+with probability $\tau \in [0,1]$.
+If variable edges are present their strength is 
+sampled uniformly at random independently for each subject. 
+We note that setting $\tau=0$
+results in an identical network for all subjects. 
+At the other end of the spectrum, 
+setting $\tau=1$ results in 
+all subjects having identical edge support (i.e., the same edges will be present or absent across all subjects). However, edge weights for edges within $\tilde E$ 
+are randomly sampled thereby introducing variability across subjects. 
+% As a result the nature of edges within $\tilde E$ variages 
+
+% 
+% significant inter-subject variability will 
+% be present in $\tau=1$. This follows from the fact that although the 
+% same edges will be present across subjects, 
+% 
+% 
+% Conversely, still 
+% results in inter-subject variability as 
+% all edges will having varying weights. 
+
+Pseudo-code for the proposed method is provided in Algorithm \ref{algo1}. 
+It is important to note that 
+the proposed algorithm returns simulated network structure for 
+both the population connectivity network as well as 
+the subject-specific networks. Moreover, we also obtain
+a simulated network of highly variable edges captured in $\tilde E$.
+
+% The proposed algorithm contains several parameters which affect the properties of the resulting networks.
+% First, the choice of $e_{ran}$ (and to a lesser extent $\tau$) directly affects 
+% the inter-subject variability within the cohort. Large values 
+% of 
+
+ \begin{algorithm}[h!]
+ \DontPrintSemicolon
+ \KwIn{Number of nodes $p$, number of subjects $N$, size of random effects network $e_{ran} = |\tilde E|$,
+ a random effects edge probability $\tau \in [0,1]$ and connectivity strength $r \in \mathbb{R}_{+}$}
+ \KwResult{Population network, $\Theta^{pop}$, subject-specific networks, $\{\Theta^{(i)}\}$, random effects edges
+$\tilde E$}
+ \Begin{
+ Simulate $E^{pop}$ according to \cite{barabasi1999emergence} model\;
+ Build $\Theta^{pop}$ by randomly 
+ selecting edge weights from the
+ interval $[-r, -\frac{r}{2}] \cup [\frac{r}{2}, r]$ \;
+ Simulate $\tilde E$ according to \cite{erdHos1959random} model with $e_{ran}$ edges\;
+ \For{i $\in \{1, \ldots, N\}$}{
+ \For{each edge $(j,k)$}{
+ \If{$(j,k) \in \tilde E$}{
+ $(j,k) \in E^{(i)}$ with probability $\tau$}
+%  \Else{pass}
+ }
+%  Define $\Theta^{(i)}$ as follows: 
+%  $$ \Theta^{(i)}_{k,j} = \Theta^{(i)}_{j,k} =  \begin{cases}
+%   0, & \text{if }  (k,j) \notin \tilde E \\ %\Theta^s_{j,k} = 0, \\
+%   1, & \text{with probability } \tau.
+% \end{cases} ~~ \mbox{for}~1\leq j<k\leq p $$
+Randomly select edge weights and signs for $\Theta^{(i)}$
+ }
+ }
+ \Return{$E^{pop}, \tilde E$, $\{ E^{(i)}\}$ and $\Theta^{pop}$, $\{\Theta^{(i)} \}$}
+ \caption{Generate  population and subject-specific random networks}
+ \label{algo1}
+\end{algorithm}
+
+\subsubsection{Data generation}
+\label{sec--DataGen}
+While Algorithm \ref{algo1}
+can be employed to simulate functional connectivity networks across a cohort of subjects,
+care must be taken when looking to simulate the corresponding data. 
+In this package, data is generated for each subject according to the  
+following multivariate normal distribution:
+\begin{equation}
+ X^{(i)} \sim \mathcal{N} \left ( 0, \left (  {PD} \left(\Theta^{pop} + \Theta^{(i)} \right )\right )^{-1} \right ),
+\end{equation}
+where $PD(\cdot)$ is a function applied in order to ensure the resulting matrix is positive definite.
+In this work we follow \cite{danaher2014joint} 
+and ensure $\Theta^{pop} + \Theta^{(i)} $ is positive definite by
+rescaling the off-diagonal entries. This involves dividing each
+off-diagonal entry by the 
+sum of the absolute values of all off-diagonal elements in its corresponding row. This results in a non-symmetric 
+matrix which we average with its transpose in order to obtain a symmetric 
+matrix.
+
+\subsection{Alternative simulation methods}
+\label{subsec--alt}
+In addition to the Algorithm described above, the \verb+MNS+ 
+package also implements the network simulation method 
+described in \cite{danaher2014joint}.
+Briefly, this method simulates related networks 
+for a three-subject problem. Nodes are divided into ten equally sized and unconnected sub-networks.
+Within each sub-network the connectivity structure is simulated according to
+the preferential attachment model of \cite{barabasi1999emergence}, thus nodes display
+a power-law degree distribution. 
+Of the ten networks, eight are present across all three subjects. Of the remaining two sub-networks,
+one is present in two of the three subjects while the final sub-network is present only 
+in one subject.
+
+While such an approach shares several similarities with the proposed method (e.g., node degree 
+follow a power-law distribution in both), there are several key differences.
+First and foremost, this method is only able to simulate
+subject-specific networks. As a result, there is no clear method from which to obtain population networks. 
+Moreover, it can be argued that this method of network simulation is unrealistic as 
+nodes are divided into equally sized and unconnected components. 
+Finally, in its current implementation this 
+method is only able to simulate data for $N=3$ subjects 
+and the degree of inter-subject variability is fixed. This is in contrast to 
+the proposed method where networks can be simulated for any number of subjects and 
+the degree of inter-subject variability 
+can be varied by changing parameters $e_{ran}$ and $\tau$. 
+
+
+\subsection{Implementation and examples}
+\label{subsec--Exam}
+
+In this section we provide various examples to highlight the network simulation methods within the 
+\verb+MNS+ package and give example code. 
+
+Within the \verb+MNS+ package, random networks are simulated via the \verb+gen.Network+ function.
+This function implements both the proposed method for network simulation, described in Section \ref{subsec--Algo},
+as well as the method of \cite{danaher2014joint}, described in Section \ref{subsec--alt}.
+
+The \verb+gen.Network+ function takes as input a number of parameters, the most important of which is 
+the \verb+method+ parameter which defines the algorithm through which to simulate random networks.
+This parameter can take one of two values; the default setting of \verb+method="cohort"+
+simulates random networks according to  algorithm \ref{algo1}
+while setting \verb+method="danaher"+ employs the algorithm described in Section \ref{subsec--alt}.
+
+The number of nodes is specified by parameter \verb+p+, while the parameter \verb+Nobs+
+specifies the number of observations to simulate per subject. If this parameter is not provided then
+only the random networks are simulated and returned (i.e., random data for each subject is not simulated).
+The remaining parameters only affect the \verb+"cohort"+ simulation method;
+\verb+Nsub+ is the number of subjects{\footnote{note this is fixed at three for \protect\Verb+method="danaher"+  }},
+\verb+sparsity+ is the sparsity of the population network\footnote{the number of edges added in 
+each step of the \cite{barabasi1999emergence} algorithm is altered to obtain the desired sparsity},
+\verb+REsize+ and \verb+REprob+ correspond to $e_{ran}$ and $\tau$ above
+and \verb+REnoise+ determines the variability across edges in $\tilde E$. 
+Some examples are described below.
+
+In the following code networks are simulated using Algorithm \ref{algo1} 
+for $N=3$ subjects. 
+The resulting object, \verb+Net+, is a list which contains three entries.
+The first, called \verb+Networks+, is a list of length $N$ where the $i$th
+entry corresponds the precision matrix for the $i$th subject. Note 
+that is will contain both the population edges, $E^{pop}$, 
+as well as the subject-specific edges, $E^{(i)}$. 
+The second entry, called \verb+PopNet+, is the population network
+while the third entry, \verb+RanNet+, indicates which edges are highly variable. 
+The resulting simulating networks can then be plotted using 
+the \verb+plot.MNS+ function.
+This is an \verb+S3+ method for objects of class MNS and is discussed further in Section \ref{sec--MNS}.
+
+% We note that the results of the MNS algorithm can be plotted directly through 
+% the \verb+plot.MNS+ function which is discussed in Section \ref{sec--MNS}.
+
+% \begin{figure}[H]
+% \begin{centering}
+<<fig=FALSE, keep.source=TRUE, eval=FALSE>>=
+library("MNS")
+set.seed(1)
+N=3
+Net = gen.Network(method = "cohort", p = 20, 
+                       Nsub = N, sparsity = .2, 
+                       REsize = 20, REprob = .5,
+                       REnoise = 1)
+# plot simulated networks:
+plot(Net, view="sub")
+@
+
+
+\begin{figure}[H]
+% \begin{centering}
+\centering
+   \includegraphics[width=\textwidth]{Plot11}
+% \end{centering}
+\caption{Random networks for $N=3$ subjects simulated using Algorithm \ref{algo1}. Solid edges indicate reproducible population
+edges present across all subjects while dashed edges represent subject-specific idiosyncrasies and encode inter-subject
+variability. Edge color is indicative of the nature of the partial correlation.}
+\label{fig1}
+\end{figure}
+
+The above code results in the networks shown in Figure \ref{fig1}, one per subject. 
+Solid edges are population edges which are present across all subjects while dashed edges represent 
+subject-specific idiosyncrasies which are only present across some of the subjects. 
+Finally, line color is indicative of the nature of the relation between nodes; blue edges indicating a 
+positive partial correlation while negative partial correlations are indicated by red edges.
+We note there is clear 
+inter-subject variability introduced by the additional edges. 
+Returning to Algorithm \ref{algo1}, 
+the blue edges are generated in step 2. While the 
+set of red variable edges, $\tilde E$, is selected in step four and 
+these edges are randomly added in steps 7 and 8.
+
+We note that it
+is possible to obtain networks varying edge densities by
+appropriately adjusting the \verb+sparsity+
+parameter
+Moreover,
+additional inter-subject variability
+can be introduced by increasing \verb+REsize+ or \verb+REprob+.
+
+In contrast, we may also simulate
+networks according to the model proposed in  Section \ref{subsec--alt}.
+Note that this only requires the number of nodes, $p$, to be specified. 
+% As before, edges shared across all subjects 
+% are colored in blue while
+% variable edges are colored in red.
+
+
+<<fig=FALSE, keep.source=TRUE, eval=FALSE>>=
+library("MNS")
+set.seed(1)
+Net = gen.Network(method = "Danaher", p = 20)
+# plot simulated networks:
+plot(Net, view="sub")
+@
+
+\begin{figure}[H]
+% \begin{centering}
+\centering
+   \includegraphics[width=\textwidth]{Plot22}
+% \end{centering}
+\caption{Random networks as simulated using method described in Section \ref{subsec--alt}. }
+\label{fig2}
+\end{figure}
+
+Finally, we note that if the \verb+Nobs+ argument is passed then multivariate data will be simulated as 
+discussion in Section \ref{sec--DataGen}. This can be achieved as follows, with an example plotted 
+in Figure \ref{figTS}.
+
+<<fig=FALSE, keep.source=TRUE, eval=FALSE>>=
+library("MNS")
+set.seed(1)
+N=3
+Net = gen.Network(method = "cohort", p = 20, 
+                       Nobs = 500,
+                       Nsub = N, sparsity = .2, 
+                       REsize = 20, REprob = .5,
+                       REnoise = 1)
+# plot simulated networks:
+plot.ts(Net$Data[[1]][, c(1,2,3,4,5, 6)], main="")
+@
+
+\begin{figure}[H]
+% \begin{centering}
+\centering
+   \includegraphics[width=\textwidth]{TSplot}
+% \end{centering}
+\caption{Simulated data for for six nodes across a single subject.}
+\label{figTS}
+\end{figure}
+
+
+
+\section{Mixed Neighborhood Selection}
+\label{sec--MNS}
+
+In this section we briefly overview the Mixed Neighborhood Selection (MNS) algorithm
+and presents its implementation in the \verb+MNS+ package.
+For a more thorough discussion please see \cite{MYREF}.
+The MNS algorithm looks to model functional 
+connectivity networks as Gaussian graphical models (GGMs).
+This is a popular approach within the neuroimaging community \citep{varoquaux2013learning} and is 
+partially motivated by the large number of highly efficient algorithms
+through which to estimate the corresponding graphical models.
+
+Throughout this work we focus on neighborhood selection algorithms, first introduced by 
+\cite{meinshausen2006high}.
+The intuition behind neighborhood selection is that 
+if the edge structure at each node can be 
+accurately inferred, then the 
+overall edge structure can also be inferred. 
+Moreover, neighborhood selection methods are particularly appealing
+since it can be shown that the 
+neighborhood (i.e., the local edge structure) of any node, $v$,
+can be inferred 
+be considering the optimal linear prediction of
+observations at that node given all other nodes. 
+In such models, nodes that are not in the neighborhood
+of $v$ will be omitted from the set of optimal predictors.
+As a result, covariance selection is reformulated as a 
+subset selection problem. The latter problem can be 
+efficiently solved via the use of the Lasso \citep{tibshirani1996regression}. 
+Thus neighborhood selection allows us to recast covariance selection as a series of 
+Lasso regression problems, each of which is solved independently. 
+
+The MNS algorithm extends neighborhood selection
+to the scenario where data from multiple subjects is available. 
+This is achieved by introducing an additional
+mixed effect component.
+The objective of the additional 
+random effect is to capture subject-specific idiosyncrasies. This serves to yield a more accurate 
+model of population covariance structure (as inter-subject variability is recognized and dealt with adequately)
+as well as accurate subject-specific networks (as information is only leveraged across subjects when appropriate).
+Furthermore, we are also able to obtain an estimate of inter-subject variability on an edge-by-edge basis.
+This is a crucial advantage of the MNS algorithm when compared to alternative methods. By providing an
+estimate of variability across edges we are able to obtain a clear 
+intuition as to which regions drive inter-subject variability.  
+
+In the remainder of this section we discuss some of the details of the MNS algorithm together with the corresponding 
+functions. 
+In Section \ref{subsec--CV} we discuss parameter selection. The visualization methods of the \verb+MNS+ package 
+are discussed in Section \ref{subsec--plotting}. %We conclude with an example in Section \ref{subsec--Example}.
+
+\subsection{Parameter selection}
+\label{subsec--CV}
+
+The MNS algorithm requires the input of two regularization parameters. 
+The first parameter, $\lambda_1$, dictates the severity 
+of regularization applied on the 
+population network. Thus large values of $\lambda_1$ result in 
+sparse population networks. The second parameter, $\lambda_2$, 
+penalizes subject-specific deviations from the population network. Thus large values of 
+$\lambda_2$ will lead to identical networks for all subjects. 
+% Conversely, small
+% values of $\lambda_2$ result in highly 
+In the \verb+MNS+ function 
+these two regularization parameters are 
+specified by the 
+\verb+lambda_pop+ and \verb+lambda_random+
+arguments respectively. 
+These parameters must be selected with care as they are closely related; for example
+placing a high regularization on the population network (i.e., a high $\lambda_1$) may lead the model to over-estimate subject-specific edges
+as compensation. 
+
+In the \verb+MNS+ package the regularization parameters are selected via $K$-fold cross-validation.
+While alternative approaches based on information theoretic criteria could be employed
+we found cross-validation to perform better in practice. 
+
+The \verb+cv.MNS+ function implements $K$-fold cross-validation. 
+The \verb+dat+ argument contains the data for all subjects. This should be in the form a list where the 
+$i$th entry is the data for the $i$th subject. 
+The \verb+l1range+ and \verb+alpharange+ parameters specify the 
+grid of regularization parameters. Note that 
+the sparsity penalty has been re-parameterized as follows:
+\begin{equation}
+\alpha \cdot \lambda~ || \beta ||_1 + (1- \alpha) \cdot \lambda ~|| \sigma ||_1 ,
+\end{equation}
+where parameters $\lambda$ are specified by the argument \verb+lambda_range+ and
+parameters $\alpha$ by \verb+alpha_range+.
+
+Cross-validation methods are renown for their high computational cost.
+In order to reduce some of the computational burden, the \verb+cv.MNS+ function 
+can also be run in parallel by appropriately setting the \verb+parallel+ argument.
+Further, the \verb+cores+ argument allows users to specify the number of cores 
+to employ.
+
+<<fig=FALSE, keep.source=TRUE, eval=FALSE>>=
+set.seed(1)
+N=10
+Net = gen.Network(method = "cohort", p = 10, 
+                        Nsub = N, sparsity = .2, 
+                        REsize = 10, REprob = .75,
+                        REnoise = 1, Nobs = 75)
+# run cross-validation 
+CV = cv.MNS(dat = Net$Data, 
+            l1range = seq(.05, .075, length.out = 5), 
+            alpharange = seq(.25, .75, length.out = 3),
+            K=5, parallel=TRUE)
+# fit MNS model:
+mns = MNS(dat = Net$Data, 
+          lambda_pop = CV$l1 * (1-CV$alpha), 
+          lambda_random = CV$l1 * (CV$alpha))
+@
+
+
+\subsection{Visualization}
+\label{subsec--plotting}
+
+The \verb+MNS+ package also contains the \verb+plot.MNS+ function.
+This is an \verb+S3+ function for objects of class MNS. It can be used 
+both to visualize simulated networks, as shown in Section \ref{subsec--Exam},
+or to plot the output of the MNS algorithm.
+The \verb+view+ argument determines which results are plotted. The \verb+"pop"+,
+\verb+"var"+ and \verb+"sub"+ options plot the 
+population, variable and subject-specific networks respectively. 
+
+
+
+Following from the example
+in Section \ref{subsec--CV}
+the population network, shown in Figure \ref{fig:Pop},  can be plotted as follows:
+<<fig=FALSE, keep.source=TRUE, eval=FALSE>>=
+plot(mns, view="pop")
+@
+As before, edge color is indicative of whether the partial correlation between each 
+of the two nodes is positive or negative while the edge thickness
+indicates the magnitude of the partial correlation.
+
+
+% It may also be informative to visualize the highly variable edges in the network. This provides a clear indication of 
+% which components of the network demonstrate high variability.
+Moreover, since an edge-by-edge 
+estimate of variability 
+is provided for networks it is possible to identify
+specific functional relations which are irregular across the cohort.
+The network of variable edges is plotted by changing the \verb+view+ argument:
+<<fig=FALSE, keep.source=TRUE, eval=FALSE>>=
+plot(mns, view="var")
+@
+The result is shown in Figure \ref{fig:Var}.
+Since variability is reported on an edge-by-edge basis the results
+are easily interpretable. As before, the edge thickness is 
+proportional to the magnitude of the variance.
+
+% \newpage
+% \begin{landscape}
+\begin{figure}[!htb]
+    \centering
+    \begin{minipage}{.45\textwidth}
+        \centering
+        \includegraphics[width=.7\linewidth, height=0.15\textheight]{PopPlot}
+        \caption{Estimated population network. This is the 
+        set of edges which are reproducible across the entire cohort.}
+        \label{fig:Pop}
+    \end{minipage} ~
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=.7\linewidth, height=0.15\textheight]{VarPlot}
+        \caption{Estimate variable edges. Plotted edges are highly variable across 
+        the entire cohort of subjects.}
+        \label{fig:Var}
+    \end{minipage}
+%     \begin{minipage}{0.33\textwidth}
+%         \centering
+%         \includegraphics[width=\linewidth, height=0.15\textheight]{PopPlot}
+%         \caption{$dt =$}
+%         \label{fig:prob1_6_1}
+%     \end{minipage}
+\end{figure}
+% \end{landscape}
+
+
+Finally, it is also possible to view the estimated networks on a subject-specific 
+basis. As before, this is achieved by changing the \verb+view+ argument. 
+Further, the \verb+subID+ argument selects which subjects to plot. In the code
+below we plot the networks for the 2nd, 4th and 6th subjects. 
+<<fig=FALSE, keep.source=TRUE, eval=FALSE>>=
+plot(mns, view="sub", subID=c(2,4,6))
+@
+
+\begin{figure}[H]
+% \begin{centering}
+\centering
+   \includegraphics[width=\textwidth]{Subjects}
+% \end{centering}
+\caption{Estimated subject-specific networks for subjects 2, 4 and 6.
+Population edges are plotted as solid lines while variable edges are plotted
+as dashed lines.}
+\label{figSub}
+\end{figure}
+
+The results, shown in Figure \ref{figSub}, show the estimated networks for 
+three of the ten subjects. As before,
+the color and thickness of each edge indicates the nature and 
+magnitude of the partial correlation.
+Population edges
+are plotted as solid lines whiles
+variable edges are plotted as dashed lines.
+
+% From Figure \ref{figSub} it is clear to see how variable edges vary across
+% the subjects. For example the edge between nodes 4 and 5 vary both in 
+% magnitude as well as in sign across the three selected subjects.
+
+\section{Conclusion}
+
+In this vignette we have introduced 
+the \verb+MNS+ package
+and highlighted the functionality and use of its functions.
+The \verb+MNS+ package has been written in order to estimate 
+multiple related Gaussian graphical models. While the motivation for this 
+work has been estimating  resting-state functional connectivity 
+networks from fMRI data the methods described in this 
+vignette (and in \cite{MYREF}) can be applied in any 
+scenario where the objective is to estimate multiple graphical models.
+Another possible application of the \verb+MNS+ algorithm
+would be to study variability over time within a single subject.
+For example, it has been suggested that functional connectivity is 
+non-stationary \citep{monti2014estimating, monti2015graph}. Thus
+by dividing resting-state data into blocks it would be possible to study
+variability within a scan for a single subject.
+
+
+In order to empirically validate the \verb+MNS+ algorithm, we have presented a novel algorithm
+through which to simulate 
+realistic networks. 
+The proposed method can simulate networks with varying levels of inter-subject 
+variability. Moreover, the resulting networks demonstrate 
+several well-documents properties 
+observed in functional connectivity networks; these include a power-law distribution
+for the node degree as well as significant inter-subject variability. 
+
+
+
+
+
+
+
+\newpage
+\bibliography{ref}{}
+\bibliographystyle{plainnat}
+
+\end{document}
